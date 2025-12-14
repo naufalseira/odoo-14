@@ -1,0 +1,72 @@
+services:
+  odoo-web:
+    container_name: odoo-web
+    image: odoo:14
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - PASSWORD_FILE=/run/secrets/db_password
+      - DB_PASSWORD_FILE=/run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - odoo-web-data:/var/lib/odoo
+      - ./config:/etc/odoo
+      - ./addons:/mnt/extra-addons
+    networks:
+      - odoo
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    ports:
+      - "8443:443"
+      - "8088:80"
+    volumes:
+      - ./config/nginx-ssl.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx.crt:/etc/nginx/nginx.crt:ro
+      - ./config/nginx.key:/etc/nginx/nginx.key:ro
+    depends_on:
+      - odoo-web
+    networks:
+      - odoo
+    restart: unless-stopped
+
+  odoo-db:
+    container_name: odoo-db
+    image: postgres:14
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+    secrets:
+      - db_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - odoo-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - odoo
+    restart: unless-stopped
+
+volumes:
+  odoo-web-data:
+  odoo-db-data:
+
+networks:
+  odoo:
+    driver: bridge
+
+secrets:
+  db_password:
+    file: ./secrets/db_password

@@ -1,0 +1,75 @@
+services:
+  odoo-web:
+    container_name: odoo-web
+    image: odoo:14
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - PASSWORD_FILE=/run/secrets/db_password
+      - DB_PASSWORD_FILE=/run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - odoo-web-data:/var/lib/odoo
+      - ./config:/etc/odoo
+      - ./addons:/mnt/extra-addons
+    networks:
+      - odoo
+      - traefik-public
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+
+      # HTTP to HTTPS redirect
+      - traefik.http.routers.odoo-http.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.odoo-http.entrypoints=http
+      - traefik.http.routers.odoo-http.middlewares=https-redirect
+
+      # HTTPS configuration
+      - traefik.http.routers.odoo-https.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.odoo-https.entrypoints=https
+      - traefik.http.routers.odoo-https.tls=true
+      - traefik.http.routers.odoo-https.tls.certresolver=le
+      - traefik.http.routers.odoo-https.service=odoo-service
+      - traefik.http.services.odoo-service.loadbalancer.server.port=8069
+    restart: unless-stopped
+
+  odoo-db:
+    container_name: odoo-db
+    image: postgres:14
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+    secrets:
+      - db_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - odoo-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - odoo
+    restart: unless-stopped
+
+volumes:
+  odoo-web-data:
+  odoo-db-data:
+
+networks:
+  odoo:
+    driver: bridge
+  traefik-public:
+    external: true
+
+secrets:
+  db_password:
+    file: ./secrets/db_password
