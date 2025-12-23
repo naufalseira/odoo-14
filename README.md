@@ -20,12 +20,13 @@ Best if you already have a Traefik instance running. It uses Docker labels to au
 
 ```mermaid
 graph TD
-    User([User]) -->|HTTPS| Traefik["Traefik Proxy\n(External Container)"]
-    subgraph "Docker Network: traefik-public"
+    User([User]) -->|HTTPS:433| Traefik["Traefik Proxy
+    (External Container)"]
+    subgraph "Docker Network: traefik"
         Traefik -->|Internal:8069| Odoo[Odoo 14 Container]
     end
-    subgraph "Docker Network: odoo-network"
-        Odoo -->|TCP:5432| DB[PostgreSQL 14]
+    subgraph "Docker Network: odoo"
+        Odoo -->|TCP:5432| DB[PostgreSQL 14 Container]
     end
 ```
 
@@ -37,7 +38,7 @@ graph TD
     User([User]) -->|HTTPS:8443| Nginx[Nginx Container]
     subgraph "Docker Config"
         Nginx -->|TCP:8069| Odoo[Odoo 14 Container]
-        Odoo -->|TCP:5432| DB[PostgreSQL 14]
+        Odoo -->|TCP:5432| DB[PostgreSQL 14 Container]
     end
 ```
 
