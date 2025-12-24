@@ -21,14 +21,13 @@ Best if you already have a Traefik instance running, or deploy one using the inc
 
 ```mermaid
 graph TD
-graph TD
     User([User]) -->|HTTPS:443| Traefik("Traefik 3.3")
     User -->|HTTP:80| Traefik
 
     subgraph "External Network: traefik"
         Traefik -->|Internal:8069| Odoo("Odoo 14")
     end
-    
+
     subgraph "Internal Network: odoo"
         Odoo -->|TCP:5432| DB("PostgreSQL 14")
     end
