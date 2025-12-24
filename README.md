@@ -7,6 +7,7 @@ This repository contains a secure, Dockerized deployment of Odoo 14 with Postgre
 *   **`odoo.yaml`**: Standard setup with local Nginx on port 8088.
 *   **`odoo-traefik.yaml`**: Integrated setup using Traefik (Auto-HTTPS).
 *   **`odoo-nginx.yaml`**: Standalone setup with Nginx handling HTTPS (Self-signed).
+*   **`traefik.yaml`**: Standalone Traefik reverse proxy with Let's Encrypt and dashboard.
 *   **`config/`**: Configuration files for Odoo and Nginx.
 *   **`secrets/`**: Directory for storing sensitive passwords (excluded from git).
 *   **`.env`**: Environment variables for non-sensitive config.
@@ -16,19 +17,24 @@ This repository contains a secure, Dockerized deployment of Odoo 14 with Postgre
 We provide two main ways to deploy this stack:
 
 ### Option A: Traefik (Recommended)
-Best if you already have a Traefik instance running. It uses Docker labels to automatically route traffic.
+Best if you already have a Traefik instance running, or deploy one using the included `traefik.yaml`. It uses Docker labels to automatically route traffic and obtain Let's Encrypt certificates.
 
 ```mermaid
 graph TD
-    User([User]) -->|HTTPS:433| Traefik["Traefik Proxy
-    (External Container)"]
-    subgraph "Docker Network: traefik"
-        Traefik -->|Internal:8069| Odoo[Odoo 14 Container]
+graph TD
+    User([User]) -->|HTTPS:443| Traefik("Traefik 3.3")
+    User -->|HTTP:80| Traefik
+
+    subgraph "External Network: traefik"
+        Traefik -->|Internal:8069| Odoo("Odoo 14")
     end
-    subgraph "Docker Network: odoo"
-        Odoo -->|TCP:5432| DB[PostgreSQL 14 Container]
+    
+    subgraph "Internal Network: odoo"
+        Odoo -->|TCP:5432| DB("PostgreSQL 14")
     end
 ```
+
+> **Note:** Both `odoo-traefik.yaml` and `traefik.yaml` require the external Docker network `traefik-public` to be created before deployment.
 
 ### Option B: Nginx (Standalone)
 Best for standalone servers. Uses a sidecar Nginx container to handle SSL/TLS.
@@ -43,7 +49,7 @@ graph TD
 ```
 
 ## Security Features
-*   **Secrets Management**: Passwords are securely mounted via Docker secrets, not plain text in environment variables, using `/run/secrets/`.
+*   **Secrets Management**: Database password is provided via Docker secret `pg_password` (mounted at `/run/secrets/pg_password`). The Odoo master admin password is defined directly in `config/odoo.conf` (`admin_passwd`) and is **not** stored in `.env` or Docker secrets.
 *   **Proxy Mode**: Odoo configured with `proxy_mode = True` to correctly handle `X-Forwarded-*` headers.
 
 ## Deployment Tutorial
@@ -68,30 +74,48 @@ cp .env.example .env
 Create the secrets directory and files. These are **not** committed to Git.
 ```bash
 mkdir -p secrets
-echo "your_strong_db_password" > secrets/db_password
-echo "your_strong_master_password" > secrets/odoo_password
+echo "your_strong_db_password" > secrets/pg_password
+# Odoo master password is set in config/odoo.conf
 ```
 
-### Step 3: Choose Your Deployment
+### Step 3: Create External Docker Network
 
-#### Variant 1: Traefik (Production Recommended)
-Ensure your Traefik network exists (default: `traefik-public` in the file).
+Before deploying with Traefik, you must create the external network:
 ```bash
-# Update network name if different
-vim odoo-traefik.yaml 
+docker network create traefik-public
+```
 
-# Deploy
+### Step 4: Choose Your Deployment
+
+#### Variant 1: Traefik
+If you need a new Traefik instance, first configure your `.env` with Traefik variables:
+```bash
+# Required variables for traefik.yaml
+DOMAIN=domain.com
+ACME_EMAIL=your-email@example.com
+USERNAME=admin
+HASHED_PASSWORD=$(htpasswd -nB admin | sed -e 's/\$/\$\$/g')
+```
+
+Then deploy:
+```bash
+# Deploy Traefik first
+docker compose -f traefik.yaml up -d
+
+# Deploy Odoo
 docker compose -f odoo-traefik.yaml up -d
 ```
-*Access:* `https://odoo.naseira.com`
 
-#### Variant 2: Nginx (Standalone HTTPS)
+*Access:* `https://${SUB_DOMAIN}` (e.g., `https://odoo.domain.com`)
+*Traefik Dashboard:* `https://traefik.domain.com`
+
+#### Variant 2: Nginx
 Uses self-signed certificates generated in `config/`.
 ```bash
 # Generate certs if missing
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout config/nginx.key -out config/nginx.crt \
-    -subj "/CN=odoo.naseira.com"
+    -subj "/CN=odoo.domain.com"
 
 # Deploy
 docker compose -f odoo-nginx.yaml up -d
