@@ -8,10 +8,11 @@ services:
     env_file:
       - .env
     environment:
-      - PASSWORD_FILE=/run/secrets/db_password
-      - DB_PASSWORD_FILE=/run/secrets/db_password
+      - USER=${USER}
+      - HOST=${HOST}
+      - PASSWORD_FILE=/run/secrets/pg_password
     secrets:
-      - db_password
+      - pg_password
     volumes:
       - odoo-web-data:/var/lib/odoo
       - ./config:/etc/odoo
@@ -24,12 +25,12 @@ services:
       - traefik.docker.network=traefik-public
 
       # HTTP to HTTPS redirect
-      - traefik.http.routers.odoo-http.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.odoo-http.rule=Host(`${SUB_DOMAIN}`)
       - traefik.http.routers.odoo-http.entrypoints=http
       - traefik.http.routers.odoo-http.middlewares=https-redirect
 
       # HTTPS configuration
-      - traefik.http.routers.odoo-https.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.odoo-https.rule=Host(`${SUB_DOMAIN}`)
       - traefik.http.routers.odoo-https.entrypoints=https
       - traefik.http.routers.odoo-https.tls=true
       - traefik.http.routers.odoo-https.tls.certresolver=le
@@ -43,11 +44,13 @@ services:
     env_file:
       - .env
     environment:
-      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/pg_password
     secrets:
-      - db_password
-    ports:
-      - "5432:5432"
+      - pg_password
     volumes:
       - odoo-db-data:/var/lib/postgresql/data
     healthcheck:
@@ -71,5 +74,5 @@ networks:
     external: true
 
 secrets:
-  db_password:
-    file: ./secrets/db_password
+  pg_password:
+    file: ./secrets/pg_password.txt
