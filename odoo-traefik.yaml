@@ -1,3 +1,26 @@
+# =============================================================================
+# ODOO WITH TRAEFIK REVERSE PROXY
+# =============================================================================
+#
+# DESCRIPTION:
+#   Deploy Odoo 14 with Traefik as reverse proxy for automatic HTTPS
+#
+# REQUIREMENTS:
+#   - Docker & Docker Compose installed
+#   - External network: docker network create traefik-public
+#   - Traefik running (deploy traefik.yaml first)
+#   - .env file configured with DOMAIN, SUB_DOMAIN, etc.
+#   - secrets/pg_password.txt with database password
+#
+# ACCESS:
+#   - Odoo: https://${SUB_DOMAIN} (e.g., https://odoo.example.com)
+#
+# NOTES:
+#   - To deploy on main domain, change ${SUB_DOMAIN} to ${DOMAIN} in labels below
+#   - SSL certificate is automatically obtained from Let's Encrypt
+#
+# =============================================================================
+
 services:
   odoo-web:
     container_name: odoo-web
