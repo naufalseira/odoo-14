@@ -1,3 +1,24 @@
+# =============================================================================
+# ODOO LOCAL DEVELOPMENT
+# =============================================================================
+#
+# DESCRIPTION:
+#   Deploy Odoo 14 for local development and testing
+#
+# REQUIREMENTS:
+#   - Docker & Docker Compose installed
+#   - .env file configured
+#   - secrets/pg_password.txt with database password
+#
+# ACCESS:
+#   - Odoo: http://localhost:8069
+#
+# NOTES:
+#   - No HTTPS - for development/testing only
+#   - Do not use in production
+#
+# =============================================================================
+
 services:
   odoo-web:
     container_name: odoo-web
@@ -10,10 +31,11 @@ services:
     env_file:
       - .env
     environment:
-      - PASSWORD_FILE=/run/secrets/db_password
-      - DB_PASSWORD_FILE=/run/secrets/db_password
+      - USER=${USER}
+      - HOST=${HOST}
+      - PASSWORD_FILE=/run/secrets/pg_password
     secrets:
-      - db_password
+      - pg_password
     volumes:
       - odoo-web-data:/var/lib/odoo
       - ./config:/etc/odoo
@@ -28,11 +50,13 @@ services:
     env_file:
       - .env
     environment:
-      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/pg_password
     secrets:
-      - db_password
-    ports:
-      - "5432:5432"
+      - pg_password
     volumes:
       - odoo-db-data:/var/lib/postgresql/data
     healthcheck:
@@ -54,5 +78,5 @@ networks:
     driver: bridge
 
 secrets:
-  db_password:
-    file: ./secrets/db_password
+  pg_password:
+    file: ./secrets/pg_password.txt
