@@ -1,141 +1,432 @@
 # Odoo 14 Dockerized Deployment
 
-This repository contains a secure, Dockerized deployment of Odoo 14 with PostgreSQL 14. It includes built-in support for two reverse proxy architectures: **Traefik** (recommended for existing stacks) and **Nginx** (standalone).
+Deploy Odoo 14 ERP with PostgreSQL 14 using Docker. This guide provides **production-ready** deployment with automatic HTTPS certificates via Traefik reverse proxy.
 
-## Repository Content
+---
 
-*   **`odoo.yaml`**: Standard setup with local Nginx on port 8088.
-*   **`odoo-traefik.yaml`**: Integrated setup using Traefik (Auto-HTTPS).
-*   **`odoo-nginx.yaml`**: Standalone setup with Nginx handling HTTPS (Self-signed).
-*   **`traefik.yaml`**: Standalone Traefik reverse proxy with Let's Encrypt and dashboard.
-*   **`config/`**: Configuration files for Odoo and Nginx.
-*   **`secrets/`**: Directory for storing sensitive passwords (excluded from git).
-*   **`.env`**: Environment variables for non-sensitive config.
+## What's Inside
 
-## Architecture
+| File | Description |
+|------|-------------|
+| `traefik.yaml` | Traefik reverse proxy (handles HTTPS) |
+| `odoo-traefik.yaml` | Odoo + PostgreSQL stack (connects to Traefik) |
+| `odoo-nginx.yaml` | Alternative: Odoo with Nginx (self-signed SSL) |
+| `odoo.yaml` | Alternative: Basic setup for local testing |
+| `config/` | Odoo and Nginx configuration files |
+| `secrets/` | Password files (not committed to Git) |
+| `.env` | Environment variables |
 
-We provide two main ways to deploy this stack:
+---
 
-### Option A: Traefik (Recommended)
-Best if you already have a Traefik instance running, or deploy one using the included `traefik.yaml`. It uses Docker labels to automatically route traffic and obtain Let's Encrypt certificates.
+## Architecture Overview
 
 ```mermaid
 graph TD
-    User([User]) -->|HTTPS:443| Traefik("Traefik 3.3")
+    User([User]) -->|HTTPS:443| Traefik
     User -->|HTTP:80| Traefik
 
-    subgraph "External Network: traefik"
-        Traefik -->|Internal:8069| Odoo("Odoo 14")
-    end
+    subgraph "Docker Host"
+        subgraph "traefik-public network"
+            Traefik["🔒 Traefik 3.3<br/>Reverse Proxy"]
+            Traefik -->|Port 8069| Odoo["📦 Odoo 14<br/>ERP Application"]
+        end
 
-    subgraph "Internal Network: odoo"
-        Odoo -->|TCP:5432| DB("PostgreSQL 14")
-    end
-```
+        subgraph "odoo network"
+            Odoo -->|Port 5432| DB["🗄️ PostgreSQL 14<br/>Database"]
+        end
 
-> **Note:** Both `odoo-traefik.yaml` and `traefik.yaml` require the external Docker network `traefik-public` to be created before deployment.
-
-### Option B: Nginx (Standalone)
-Best for standalone servers. Uses a sidecar Nginx container to handle SSL/TLS.
-
-```mermaid
-graph TD
-    User([User]) -->|HTTPS:8443| Nginx[Nginx Container]
-    subgraph "Docker Config"
-        Nginx -->|TCP:8069| Odoo[Odoo 14 Container]
-        Odoo -->|TCP:5432| DB[PostgreSQL 14 Container]
     end
 ```
 
-## Security Features
-*   **Secrets Management**: Database password is provided via Docker secret `pg_password` (mounted at `/run/secrets/pg_password`). The Odoo master admin password is defined directly in `config/odoo.conf` (`admin_passwd`) and is **not** stored in `.env` or Docker secrets.
-*   **Proxy Mode**: Odoo configured with `proxy_mode = True` to correctly handle `X-Forwarded-*` headers.
+### How It Works
 
-## Deployment Tutorial
+1. **Traefik** listens on ports 80 (HTTP) and 443 (HTTPS)
+2. **Traefik** automatically obtains SSL certificates from Let's Encrypt
+3. **Traefik** routes requests to Odoo based on domain name
+4. **Odoo** connects to PostgreSQL for data storage
+5. All traffic is encrypted with HTTPS
 
-### Prerequisites
-1.  **Docker & Docker Compose** installed.
-2.  **Git** installed.
+---
 
-### Step 1: Clone & Configure
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- [ ] **VPS/Server** with public IP address
+- [ ] **Domain name** pointing to your server (e.g., `odoo.example.com`)
+- [ ] **Docker** installed ([Install Guide](https://docs.docker.com/engine/install/))
+- [ ] **Docker Compose** v2+ installed
+- [ ] **Ports 80 and 443** open in your firewall
+
+### Verify Docker Installation
+
+```bash
+# Check Docker version (should be 20.10+)
+docker --version
+
+# Check Docker Compose version (should be 2.0+)
+docker compose version
+```
+
+---
+
+## Quick Start Guide
+
+### Step 1: Clone the Repository
+
 ```bash
 git clone https://github.com/naufalseira/odoo-14.git
 cd odoo-14
 ```
 
-Create your `.env` file:
-```bash
-cp .env.example .env
-# Edit .env to match your needs
-```
+### Step 2: Create Docker Network
 
-### Step 2: Set Up Secrets
-Create the secrets directory and files. These are **not** committed to Git.
-```bash
-mkdir -p secrets
-echo "your_strong_db_password" > secrets/pg_password
-# Odoo master password is set in config/odoo.conf
-```
+Traefik and Odoo communicate through a shared Docker network. Create it first:
 
-### Step 3: Create External Docker Network
-
-Before deploying with Traefik, you must create the external network:
 ```bash
 docker network create traefik-public
 ```
 
-### Step 4: Choose Your Deployment
+> **Why?** Docker networks isolate containers. The `traefik-public` network allows Traefik to discover and route traffic to Odoo.
 
-#### Variant 1: Traefik
-If you need a new Traefik instance, first configure your `.env` with Traefik variables:
+### Step 3: Set Up Database Password
+
+Create a secure password for PostgreSQL:
+
 ```bash
-# Required variables for traefik.yaml
-DOMAIN=domain.com
-ACME_EMAIL=your-email@example.com
-USERNAME=admin
-HASHED_PASSWORD=$(htpasswd -nB admin | sed -e 's/\$/\$\$/g')
+# Create secrets directory
+mkdir -p secrets
+
+# Generate a strong password and save it
+echo "your_strong_database_password_here" > secrets/pg_password.txt
+
+# Secure the file permissions
+chmod 600 secrets/pg_password.txt
 ```
 
-Then deploy:
-```bash
-# Deploy Traefik first
-docker compose -f traefik.yaml up -d
+> **Security Note:** This password is mounted as a Docker secret, not exposed in environment variables.
 
-# Deploy Odoo
+### Step 4: Generate Traefik Dashboard Password
+
+Traefik has a web dashboard for monitoring. Protect it with a password:
+
+```bash
+# Generate bcrypt-hashed password
+# Replace 'admin' and 'your_password' with your desired credentials
+docker run --rm httpd:alpine htpasswd -n -b -B admin your_password
+```
+
+**Example output:**
+```
+admin:$2y$05$UHw.pfAQObWpSjqiqYGC0Ox.8ijkd6p2EgiDn2bRF1af8n9g29Uji
+```
+
+Copy the **hash part only** (everything after `admin:`).
+
+### Step 5: Configure Environment Variables
+
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit the file
+nano .env
+```
+
+Update these values in `.env`:
+
+```bash
+# Your main domain (used for Traefik dashboard)
+DOMAIN=example.com
+
+# Subdomain where Odoo will be accessible (optional)
+SUB_DOMAIN=odoo.example.com
+
+# Email for Let's Encrypt notifications (certificate expiry warnings)
+ACME_EMAIL=admin@example.com
+
+# Traefik dashboard credentials
+USERNAME=admin
+HASHED_PASSWORD=$2y$05$UHw.pfAQObWpSjqiqYGC0Ox.8ijkd6p2EgiDn2bRF1af8n9g29Uji
+```
+
+> **💡 Deploying on Main Domain:** If you want Odoo accessible directly on your main domain (e.g., `example.com` instead of `odoo.example.com`), edit `odoo-traefik.yaml` and change `${SUB_DOMAIN}` to `${DOMAIN}` in the Traefik labels.
+
+### Step 6: Deploy Traefik
+
+```bash
+docker compose -f traefik.yaml up -d
+```
+
+**Verify Traefik is running:**
+```bash
+docker compose -f traefik.yaml ps
+```
+
+Expected output:
+```
+NAME      IMAGE          STATUS
+traefik   traefik:3.3    Up X minutes
+```
+
+### Step 7: Deploy Odoo
+
+```bash
 docker compose -f odoo-traefik.yaml up -d
 ```
 
-*Access:* `https://${SUB_DOMAIN}` (e.g., `https://odoo.domain.com`)
-*Traefik Dashboard:* `https://traefik.domain.com`
-
-#### Variant 2: Nginx
-Uses self-signed certificates generated in `config/`.
+**Verify Odoo is running:**
 ```bash
-# Generate certs if missing
+docker compose -f odoo-traefik.yaml ps
+```
+
+Expected output:
+```
+NAME        IMAGE          STATUS
+odoo-web    odoo:14        Up X minutes
+odoo-db     postgres:14    Up X minutes (healthy)
+```
+
+### Step 8: Access Odoo
+
+Wait 1-2 minutes for SSL certificate generation, then open:
+
+- **Odoo:** `https://odoo.example.com`
+- **Traefik Dashboard:** `https://traefik.example.com`
+
+**Default Odoo Credentials:**
+- Email: `admin`
+- Password: `admin`
+
+> ⚠️ **Important:** Change the default password immediately after first login!
+
+---
+
+## Security Features
+
+| Feature | Description |
+|---------|-------------|
+| **Docker Secrets** | Database password stored in `/run/secrets/pg_password`, not in environment variables |
+| **HTTPS Everywhere** | All traffic encrypted with Let's Encrypt certificates |
+| **Network Isolation** | PostgreSQL only accessible from Odoo container |
+| **Proxy Mode** | Odoo correctly handles `X-Forwarded-*` headers |
+
+---
+
+## Management Commands
+
+### Restart Services
+
+```bash
+# Restart Odoo only
+docker compose -f odoo-traefik.yaml restart odoo-web
+
+# Restart entire Odoo stack
+docker compose -f odoo-traefik.yaml restart
+
+# Restart Traefik
+docker compose -f traefik.yaml restart
+```
+
+### Stop Services
+
+```bash
+# Stop Odoo (keeps data)
+docker compose -f odoo-traefik.yaml down
+
+# Stop Traefik
+docker compose -f traefik.yaml down
+
+# ⚠️ Stop and DELETE all data
+docker compose -f odoo-traefik.yaml down -v
+```
+
+### View Logs
+
+```bash
+# Odoo logs (live)
+docker compose -f odoo-traefik.yaml logs -f odoo-web
+
+# Database logs
+docker compose -f odoo-traefik.yaml logs -f odoo-db
+
+# Traefik logs
+docker compose -f traefik.yaml logs -f
+```
+
+---
+
+## Verification Checklist
+
+After deployment, verify everything works:
+
+### 1. Check Container Status
+
+```bash
+docker compose -f traefik.yaml ps
+docker compose -f odoo-traefik.yaml ps
+```
+
+All containers should show `Up` status.
+
+### 2. Check Network Connection
+
+```bash
+docker network inspect traefik-public --format '{{range .Containers}}{{.Name}} {{end}}'
+```
+
+Should list: `traefik odoo-web`
+
+### 3. Test HTTPS
+
+```bash
+curl -I https://odoo.example.com
+```
+
+Should return `HTTP/2 200` or redirect to login.
+
+### 4. Test Database
+
+```bash
+docker compose -f odoo-traefik.yaml exec odoo-db psql -U odoo -d postgres -c '\l'
+```
+
+Should list available databases.
+
+---
+
+## Troubleshooting
+
+### Problem: "Bad Gateway" (502 Error)
+
+**Cause:** Odoo container is not running or not connected to Traefik network.
+
+```bash
+# Check container status
+docker compose -f odoo-traefik.yaml ps
+
+# Check Odoo logs for errors
+docker compose -f odoo-traefik.yaml logs --tail=50 odoo-web
+
+# Verify network connection
+docker network inspect traefik-public
+```
+
+### Problem: "Internal Server Error" on First Access
+
+**Cause:** Database not initialized.
+
+```bash
+# Stop Odoo
+docker compose -f odoo-traefik.yaml stop odoo-web
+
+# Initialize database
+docker compose -f odoo-traefik.yaml run --rm odoo-web odoo -i base -d odoo --stop-after-init
+
+# Start Odoo
+docker compose -f odoo-traefik.yaml start odoo-web
+```
+
+### Problem: SSL Certificate Not Working
+
+**Cause:** Let's Encrypt couldn't issue certificate.
+
+```bash
+# Check Traefik logs for ACME errors
+docker compose -f traefik.yaml logs | grep -i acme
+
+# Verify DNS points to your server
+dig +short odoo.example.com
+
+# Verify ports are open
+curl -4 ifconfig.me  # Your public IP
+```
+
+**Common causes:**
+- DNS not pointing to server
+- Ports 80/443 blocked by firewall
+- Rate limit exceeded (wait 1 hour)
+
+### Problem: Database Connection Failed
+
+**Cause:** Password mismatch or database not ready.
+
+```bash
+# Check database status
+docker compose -f odoo-traefik.yaml ps odoo-db
+
+# Test connection
+docker compose -f odoo-traefik.yaml exec odoo-db pg_isready -U odoo
+
+# Verify secret is mounted
+docker compose -f odoo-traefik.yaml exec odoo-web cat /run/secrets/pg_password
+```
+
+### Problem: Traefik Dashboard Not Accessible
+
+**Cause:** Wrong password or container not running.
+
+```bash
+# Check container
+docker compose -f traefik.yaml ps
+
+# Verify password hash in environment
+docker compose -f traefik.yaml config | grep HASHED_PASSWORD
+```
+
+---
+
+## Debug Commands
+
+```bash
+# Enter Odoo container
+docker compose -f odoo-traefik.yaml exec odoo-web bash
+
+# Enter database container
+docker compose -f odoo-traefik.yaml exec odoo-db bash
+
+# Enter Traefik container
+docker compose -f traefik.yaml exec traefik sh
+
+# View all Docker networks
+docker network ls
+
+# Monitor resource usage
+docker stats odoo-web odoo-db traefik
+```
+
+---
+
+## Alternative Deployments
+
+### Nginx (Self-Signed SSL)
+
+For servers without domain name:
+
+```bash
+# Generate self-signed certificate
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout config/nginx.key -out config/nginx.crt \
-    -subj "/CN=odoo.domain.com"
+    -subj "/CN=localhost"
 
 # Deploy
 docker compose -f odoo-nginx.yaml up -d
 ```
-*Access:* `https://your-server-ip:8443`
 
-#### Variant 3: Standard (Local Testing)
-Runs Nginx on port 8088.
+Access: `https://your-server-ip:8443`
+
+### Local Development
+
+For local testing without HTTPS:
+
 ```bash
 docker compose -f odoo.yaml up -d
 ```
-*Access:* `http://localhost:8088`
 
-## Management
+Access: `http://localhost:8088`
 
-**Restart Odoo:**
-```bash
-docker compose -f odoo-traefik.yaml restart odoo-web
-```
+---
 
-**View Logs:**
-```bash
-docker compose -f odoo-traefik.yaml logs -f
-```
+## License
+
+This project is open source. Odoo Community Edition is licensed under LGPL.
