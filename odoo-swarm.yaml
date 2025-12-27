@@ -1,0 +1,157 @@
+# =============================================================================
+# ODOO WITH DOCKER SWARM - HIGH AVAILABILITY CONFIGURATION
+# =============================================================================
+#
+# DESCRIPTION:
+#   Deploy Odoo 14 with Docker Swarm for High Availability, Load Balancing,
+#   and horizontal scaling capabilities.
+#
+# REQUIREMENTS:
+#   - Docker Swarm initialized: docker swarm init --advertise-addr <IP>
+#   - Overlay network created: docker network create --driver overlay --attachable traefik-public
+#   - Traefik running in Swarm mode
+#   - .env file configured
+#   - secrets/pg_password.txt with database password
+#   - /backup/postgres directory created for backups
+#
+# DEPLOYMENT:
+#   docker stack deploy -c odoo-swarm.yaml odoo-stack
+#
+# SCALING:
+#   docker service scale odoo-stack_odoo-web=3
+#
+# ACCESS:
+#   - Odoo: https://${SUB_DOMAIN} (e.g., https://odoo.naseira.com)
+#
+# =============================================================================
+
+services:
+  odoo-web:
+    image: odoo:14
+    depends_on:
+      - odoo-db
+    env_file:
+      - .env
+    environment:
+      - USER=${USER}
+      - HOST=odoo-db
+      - PASSWORD_FILE=/run/secrets/pg_password
+    secrets:
+      - pg_password
+    volumes:
+      - odoo-web-data:/var/lib/odoo
+      - odoo-config:/etc/odoo:ro
+      - odoo-addons:/mnt/extra-addons:ro
+    networks:
+      - odoo
+      - traefik-public
+    deploy:
+      mode: replicated
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+
+      # HTTP to HTTPS redirect
+      - traefik.http.routers.odoo-http.rule=Host(`${SUB_DOMAIN}`)
+      - traefik.http.routers.odoo-http.entrypoints=http
+      - traefik.http.routers.odoo-http.middlewares=https-redirect
+
+      # HTTPS configuration
+      - traefik.http.routers.odoo-https.rule=Host(`${SUB_DOMAIN}`)
+      - traefik.http.routers.odoo-https.entrypoints=https
+      - traefik.http.routers.odoo-https.tls=true
+      - traefik.http.routers.odoo-https.tls.certresolver=le
+      - traefik.http.routers.odoo-https.service=odoo-service
+
+      # Load Balancer with Sticky Sessions
+      - traefik.http.services.odoo-service.loadbalancer.server.port=8069
+      - traefik.http.services.odoo-service.loadbalancer.sticky.cookie=true
+      - traefik.http.services.odoo-service.loadbalancer.sticky.cookie.name=odoo_session
+      - traefik.http.services.odoo-service.loadbalancer.sticky.cookie.secure=true
+      - traefik.http.services.odoo-service.loadbalancer.sticky.cookie.httponly=true
+
+      # Health Check
+      - traefik.http.services.odoo-service.loadbalancer.healthcheck.path=/web/database/selector
+      - traefik.http.services.odoo-service.loadbalancer.healthcheck.interval=30s
+
+  odoo-db:
+    image: postgres:14
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/pg_password
+    secrets:
+      - pg_password
+    volumes:
+      - odoo-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - odoo
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+volumes:
+  odoo-web-data:
+    driver: local
+  odoo-db-data:
+    driver: local
+  odoo-config:
+    driver: local
+  odoo-addons:
+    driver: local
+
+networks:
+  odoo:
+    driver: overlay
+    attachable: true
+  traefik-public:
+    external: true
+
+secrets:
+  pg_password:
+    file: ./secrets/pg_password.txt

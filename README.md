@@ -9,10 +9,13 @@ Deploy Odoo 14 ERP with PostgreSQL 14 using Docker. This guide provides **produc
 | File | Description |
 |------|-------------|
 | `traefik.yaml` | Traefik reverse proxy (handles HTTPS) |
-| `odoo-traefik.yaml` | Odoo + PostgreSQL stack (connects to Traefik) |
+| `traefik-swarm.yaml` | **Traefik for Docker Swarm mode** |
+| `odoo-traefik.yaml` | Odoo + PostgreSQL stack (single instance) |
+| `odoo-swarm.yaml` | **Odoo HA stack (Docker Swarm)** |
 | `odoo-nginx.yaml` | Alternative: Odoo with Nginx (self-signed SSL) |
 | `odoo.yaml` | Alternative: Basic setup for local testing |
 | `config/` | Odoo and Nginx configuration files |
+| `scripts/` | **Helper scripts for Swarm management** |
 | `secrets/` | Password files (not committed to Git) |
 | `.env` | Environment variables |
 
@@ -393,6 +396,105 @@ docker network ls
 
 # Monitor resource usage
 docker stats odoo-web odoo-db traefik
+```
+
+---
+
+## 🚀 Docker Swarm High Availability Deployment
+
+For production environments requiring horizontal scaling, load balancing, and high availability.
+
+### HA Architecture
+
+```mermaid
+graph TB
+    subgraph "Docker Swarm Cluster"
+        LB[Traefik Load Balancer]
+        
+        LB --> O1[odoo-web replica 1]
+        LB --> O2[odoo-web replica 2]
+        LB --> O3[odoo-web replica N]
+        
+        O1 --> DB[(PostgreSQL)]
+        O2 --> DB
+        O3 --> DB
+    end
+```
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Load Balancing** | Traefik distributes traffic across replicas |
+| **Sticky Sessions** | Users stay on same replica via cookies |
+| **Rolling Updates** | Zero-downtime deployments |
+| **Auto-restart** | Failed containers automatically restart |
+| **Resource Limits** | CPU/Memory limits prevent resource exhaustion |
+
+### Quick Start (Swarm Mode)
+
+```bash
+# 1. Initialize Swarm
+./scripts/init-swarm.sh
+
+# 2. Deploy Traefik
+docker stack deploy -c traefik-swarm.yaml traefik
+
+# 3. Deploy Odoo HA
+docker stack deploy -c odoo-swarm.yaml odoo-stack
+
+# 4. Check status
+docker service ls
+```
+
+### Scaling
+
+```bash
+# Scale to 3 replicas
+./scripts/scale-odoo.sh 3
+
+# Or manually
+docker service scale odoo-stack_odoo-web=3
+```
+
+### Backup
+
+```bash
+# Manual backup
+./scripts/backup-postgres.sh
+
+# Setup daily backup (02:00 WIB)
+crontab -e
+# Add: 0 19 * * * /home/seira/odoo/scripts/backup-postgres.sh >> /var/log/odoo-backup.log 2>&1
+```
+
+### Helper Scripts
+
+| Script | Description |
+|--------|-------------|
+| `scripts/init-swarm.sh` | Initialize Docker Swarm cluster |
+| `scripts/deploy-stack.sh` | Deploy Odoo stack with checks |
+| `scripts/scale-odoo.sh` | Scale Odoo replicas |
+| `scripts/backup-postgres.sh` | Database backup with retention |
+| `scripts/check-health.sh` | Health check all services |
+
+### Useful Swarm Commands
+
+```bash
+# View all services
+docker service ls
+
+# View service logs
+docker service logs -f odoo-stack_odoo-web
+
+# View replica details
+docker service ps odoo-stack_odoo-web
+
+# Force update (rolling restart)
+docker service update --force odoo-stack_odoo-web
+
+# Remove stack
+docker stack rm odoo-stack
 ```
 
 ---
