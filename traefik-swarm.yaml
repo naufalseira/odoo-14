@@ -13,7 +13,7 @@
 
 services:
   traefik:
-    image: traefik:3.3
+    image: traefik:latest
     ports:
       - target: 80
         published: 80
@@ -21,6 +21,8 @@ services:
       - target: 443
         published: 443
         mode: host
+    environment:
+      - DOCKER_API_VERSION=1.44
     networks:
       - traefik-public
     volumes:
@@ -44,7 +46,7 @@ services:
 
       # Logging and API configuration
       - --accesslog
-      - --log
+      - --log.level=DEBUG
       - --api
     deploy:
       mode: global
@@ -65,30 +67,30 @@ services:
         reservations:
           cpus: '0.1'
           memory: 64M
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=traefik-public
-      - traefik.http.services.traefik-dashboard.loadbalancer.server.port=8080
+      labels:
+        - traefik.enable=true
+        - traefik.swarm.network=traefik-public
+        - traefik.http.services.traefik-dashboard.loadbalancer.server.port=8080
 
-      # HTTP to HTTPS redirect middleware
-      - traefik.http.middlewares.https-redirect.redirectscheme.scheme=https
-      - traefik.http.middlewares.https-redirect.redirectscheme.permanent=true
+        # HTTP to HTTPS redirect middleware
+        - traefik.http.middlewares.https-redirect.redirectscheme.scheme=https
+        - traefik.http.middlewares.https-redirect.redirectscheme.permanent=true
 
-      # Dashboard HTTP router
-      - traefik.http.routers.traefik-dashboard-http.entrypoints=http
-      - traefik.http.routers.traefik-dashboard-http.rule=Host(`traefik.${DOMAIN}`)
-      - traefik.http.routers.traefik-dashboard-http.middlewares=https-redirect
+        # Dashboard HTTP router
+        - traefik.http.routers.traefik-dashboard-http.entrypoints=http
+        - traefik.http.routers.traefik-dashboard-http.rule=Host(`traefik-sg.naseira.com`)
+        - traefik.http.routers.traefik-dashboard-http.middlewares=https-redirect
 
-      # Dashboard HTTPS router
-      - traefik.http.routers.traefik-dashboard-https.entrypoints=https
-      - traefik.http.routers.traefik-dashboard-https.rule=Host(`traefik.${DOMAIN}`)
-      - traefik.http.routers.traefik-dashboard-https.tls=true
-      - traefik.http.routers.traefik-dashboard-https.tls.certresolver=le
-      - traefik.http.routers.traefik-dashboard-https.service=api@internal
+        # Dashboard HTTPS router
+        - traefik.http.routers.traefik-dashboard-https.entrypoints=https
+        - traefik.http.routers.traefik-dashboard-https.rule=Host(`traefik-sg.naseira.com`)
+        - traefik.http.routers.traefik-dashboard-https.tls=true
+        - traefik.http.routers.traefik-dashboard-https.tls.certresolver=le
+        - traefik.http.routers.traefik-dashboard-https.service=api@internal
 
-      # Basic Auth for dashboard
-      - traefik.http.middlewares.admin-auth.basicauth.users=${USERNAME}:${HASHED_PASSWORD}
-      - traefik.http.routers.traefik-dashboard-https.middlewares=admin-auth
+        # Basic Auth for dashboard
+        - traefik.http.middlewares.admin-auth.basicauth.users=admin:$2y$05$UHw.pfAQObWpSjqiqYGC0Ox.8ijkd6p2EgiDn2bRF1af8n9g29Uji
+        - traefik.http.routers.traefik-dashboard-https.middlewares=admin-auth
 
 volumes:
   traefik-public-certificates:

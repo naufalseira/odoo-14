@@ -33,7 +33,7 @@ services:
     env_file:
       - .env
     environment:
-      - USER=${USER}
+      - USER=odoo
       - HOST=odoo-db
       - PASSWORD_FILE=/run/secrets/pg_password
     secrets:
@@ -47,7 +47,7 @@ services:
       - traefik-public
     deploy:
       mode: replicated
-      replicas: 2
+      replicas: 1
       update_config:
         parallelism: 1
         delay: 30s
@@ -66,34 +66,34 @@ services:
           cpus: '2'
           memory: 4G
         reservations:
-          cpus: '0.5'
-          memory: 1G
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=traefik-public
+          cpus: '0.25'
+          memory: 512M
+      labels:
+        - traefik.enable=true
+        - traefik.swarm.network=traefik-public
 
-      # HTTP to HTTPS redirect
-      - traefik.http.routers.odoo-http.rule=Host(`${SUB_DOMAIN}`)
-      - traefik.http.routers.odoo-http.entrypoints=http
-      - traefik.http.routers.odoo-http.middlewares=https-redirect
+        # HTTP to HTTPS redirect
+        - traefik.http.routers.odoo-http.rule=Host(`odoo.naseira.com`)
+        - traefik.http.routers.odoo-http.entrypoints=http
+        - traefik.http.routers.odoo-http.middlewares=https-redirect
 
-      # HTTPS configuration
-      - traefik.http.routers.odoo-https.rule=Host(`${SUB_DOMAIN}`)
-      - traefik.http.routers.odoo-https.entrypoints=https
-      - traefik.http.routers.odoo-https.tls=true
-      - traefik.http.routers.odoo-https.tls.certresolver=le
-      - traefik.http.routers.odoo-https.service=odoo-service
+        # HTTPS configuration
+        - traefik.http.routers.odoo-https.rule=Host(`odoo.naseira.com`)
+        - traefik.http.routers.odoo-https.entrypoints=https
+        - traefik.http.routers.odoo-https.tls=true
+        - traefik.http.routers.odoo-https.tls.certresolver=le
+        - traefik.http.routers.odoo-https.service=odoo-service
 
-      # Load Balancer with Sticky Sessions
-      - traefik.http.services.odoo-service.loadbalancer.server.port=8069
-      - traefik.http.services.odoo-service.loadbalancer.sticky.cookie=true
-      - traefik.http.services.odoo-service.loadbalancer.sticky.cookie.name=odoo_session
-      - traefik.http.services.odoo-service.loadbalancer.sticky.cookie.secure=true
-      - traefik.http.services.odoo-service.loadbalancer.sticky.cookie.httponly=true
+        # Load Balancer with Sticky Sessions
+        - traefik.http.services.odoo-service.loadbalancer.server.port=8069
+        - traefik.http.services.odoo-service.loadbalancer.sticky.cookie=true
+        - traefik.http.services.odoo-service.loadbalancer.sticky.cookie.name=odoo_session
+        - traefik.http.services.odoo-service.loadbalancer.sticky.cookie.secure=true
+        - traefik.http.services.odoo-service.loadbalancer.sticky.cookie.httponly=true
 
-      # Health Check
-      - traefik.http.services.odoo-service.loadbalancer.healthcheck.path=/web/database/selector
-      - traefik.http.services.odoo-service.loadbalancer.healthcheck.interval=30s
+        # Health Check
+        - traefik.http.services.odoo-service.loadbalancer.healthcheck.path=/web/database/selector
+        - traefik.http.services.odoo-service.loadbalancer.healthcheck.interval=30s
 
   odoo-db:
     image: postgres:14
@@ -133,7 +133,7 @@ services:
           memory: 2G
         reservations:
           cpus: '0.25'
-          memory: 512M
+          memory: 256M
 
 volumes:
   odoo-web-data:
