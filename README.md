@@ -30,7 +30,7 @@ graph TD
 
     subgraph "Docker Host"
         subgraph "traefik-public network"
-            Traefik["🔒 Traefik 3.3<br/>Reverse Proxy"]
+            Traefik["🔒 Traefik<br/>Reverse Proxy"]
             Traefik -->|Port 8069| Odoo["📦 Odoo 14<br/>ERP Application"]
         end
 
@@ -377,6 +377,27 @@ docker compose -f traefik.yaml ps
 docker compose -f traefik.yaml config | grep HASHED_PASSWORD
 ```
 
+### Problem: Odoo Login as Wrong Database User (Docker Swarm)
+
+**Cause:** System `USER` environment variable overrides configured value.
+
+When deploying with Docker Swarm, the Linux system `USER` variable (e.g., `ubuntu`) may override the intended database user (`odoo`).
+
+**Symptoms:**
+```
+Database connection failure: FATAL: password authentication failed for user "ubuntu"
+```
+
+**Solution:** Hardcode the USER value in `odoo-swarm.yaml`:
+
+```yaml
+environment:
+  - USER=odoo
+  - HOST=odoo-db
+```
+
+**Why this happens:** Docker Compose interpolates `${VARIABLE}` from the shell environment first, before reading `.env` file. Since `USER` is a reserved Linux variable, it gets the system username.
+
 ---
 
 ## Debug Commands
@@ -477,6 +498,10 @@ crontab -e
 | `scripts/scale-odoo.sh` | Scale Odoo replicas |
 | `scripts/backup-postgres.sh` | Database backup with retention |
 | `scripts/check-health.sh` | Health check all services |
+| `scripts/check-traefik.sh` | **Traefik health monitoring** |
+| `scripts/test-load-balancing.sh` | **Test traffic distribution across replicas** |
+| `scripts/test-sticky-session.sh` | **Test session persistence via cookies** |
+| `scripts/test-rolling-update.sh` | **Test zero-downtime deployments** |
 
 ### Useful Swarm Commands
 
